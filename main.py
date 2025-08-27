@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from routers import users, products, orders, finance, hr
+from routers import users, products, orders, finance, hr, it
 
 app = FastAPI(
     title="Dummy JSON Server",
@@ -13,6 +13,7 @@ app.include_router(products.router, prefix="/products", tags=["products"])
 app.include_router(orders.router, prefix="/orders", tags=["orders"])
 app.include_router(finance.router, prefix="/finance", tags=["finance"])
 app.include_router(hr.router, prefix="/hr", tags=["hr"])
+app.include_router(it.router, prefix="/it", tags=["it"])
 
 @app.get("/")
 async def root():
@@ -29,7 +30,10 @@ async def root():
             "/hr/employees",
             "/hr/policies",
             "/hr/payroll",
-            "/hr/summary"
+            "/hr/summary",
+            "/it/status",
+            "/it/support/ticket",
+            "/it/auth/password/reset",
         ],
         "api_keys_note": "Financial and HR endpoints require API key header: X-API-Key"
     }
@@ -39,10 +43,12 @@ async def get_api_keys():
     """Endpoint to show available API keys (for testing)"""
     from routers.finance import VALID_API_KEYS
     from routers.hr import VALID_HR_API_KEYS
+    from routers.it import VALID_IT_API_KEYS
     
     return {
         "financial_api_keys": VALID_API_KEYS,
         "hr_api_keys": VALID_HR_API_KEYS,
+        "it_api_keys": VALID_IT_API_KEYS,
         "usage_note": "Use header: X-API-Key: [key_value]"
     }
 

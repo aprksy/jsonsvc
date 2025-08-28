@@ -20,7 +20,7 @@ def verify_api_key(api_key: str = Header(..., description="API Key for financial
     return api_key
 
 def load_financial_data():
-    data_file = Path("data/financial.json")
+    data_file = Path("data/finance.json")
     if not data_file.exists():
         # Generate sample financial data
         default_data = {

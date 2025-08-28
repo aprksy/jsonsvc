@@ -14,7 +14,7 @@ VALID_API_KEYS = {
     "financial_admin": "fin_admin_67890xyz"
 }
 
-def verify_api_key(api_key: str = Header(..., description="API Key for financial endpoints")):
+def verify_api_key(api_key: str = Header(..., description="API Key for financial endpoints", alias="X-API-Key")):
     if api_key not in VALID_API_KEYS.values():
         raise HTTPException(status_code=401, detail="Invalid API key")
     return api_key

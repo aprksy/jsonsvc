@@ -4,7 +4,7 @@ import json
 import random
 from pathlib import Path
 from datetime import datetime, timedelta
-from pydantic import BaseModel, EmailStr, model_validator, field_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
 
 router = APIRouter()
 
@@ -50,7 +50,7 @@ def load_it_data():
         # Generate sample IT data
         default_data = {
             "system_status": generate_system_status_data(),
-            "support_tickets": [],
+            "support_tickets": generate_sample_tickets(),
             "password_resets": []
         }
         data_file.parent.mkdir(exist_ok=True)
@@ -62,6 +62,35 @@ def load_it_data():
 def save_it_data(data: Dict[str, Any]):
     data_file = Path("data/it.json")
     data_file.write_text(json.dumps(data, indent=2))
+
+def generate_sample_tickets():
+    """Generate sample support tickets for initial data"""
+    tickets = []
+    categories = ["hardware", "software", "network", "email", "account", "performance", "general"]
+    statuses = ["open", "in_progress", "resolved", "closed"]
+    priorities = ["low", "medium", "high", "critical"]
+    assignees = ["IT001", "IT002", "IT003", "IT004", None]
+    
+    for i in range(20):
+        created_date = datetime.now() - timedelta(days=random.randint(0, 30))
+        ticket_id = generate_support_ticket_id()
+        
+        ticket = {
+            "ticket_id": ticket_id,
+            "title": f"Sample Issue {i+1}",
+            "description": f"This is a sample support ticket description for testing purposes. Issue number {i+1}",
+            "priority": random.choice(priorities),
+            "category": random.choice(categories),
+            "status": random.choice(statuses),
+            "created_at": created_date.strftime("%Y-%m-%d %H:%M:%S"),
+            "updated_at": (created_date + timedelta(hours=random.randint(1, 72))).strftime("%Y-%m-%d %H:%M:%S"),
+            "contact_email": f"user{random.randint(1, 10)}@company.com",
+            "assigned_to": random.choice(assignees),
+            "resolution": "Resolved successfully" if random.random() > 0.5 else None
+        }
+        tickets.append(ticket)
+    
+    return tickets
 
 def generate_system_status_data():
     services = [
@@ -171,24 +200,108 @@ async def create_support_ticket(ticket_request: SupportTicketRequest):
 
 @router.get("/support/tickets", dependencies=[Depends(verify_it_api_key)])
 async def get_support_tickets(
-    status: Optional[str] = Query(None, description="Filter by ticket status"),
-    priority: Optional[str] = Query(None, description="Filter by priority")
+    ticket_id: Optional[str] = Query(None, description="Filter by specific ticket ID"),
+    status: Optional[str] = Query(None, description="Filter by ticket status", enum=["open", "in_progress", "resolved", "closed"]),
+    priority: Optional[str] = Query(None, description="Filter by priority level", enum=["low", "medium", "high", "critical"]),
+    category: Optional[str] = Query(None, description="Filter by ticket category"),
+    assigned_to: Optional[str] = Query(None, description="Filter by assigned employee ID or name"),
+    contact_email: Optional[str] = Query(None, description="Filter by contact email"),
+    created_after: Optional[str] = Query(None, description="Filter tickets created after this date (YYYY-MM-DD HH:MM:SS)"),
+    created_before: Optional[str] = Query(None, description="Filter tickets created before this date (YYYY-MM-DD HH:MM:SS)"),
+    updated_after: Optional[str] = Query(None, description="Filter tickets updated after this date (YYYY-MM-DD HH:MM:SS)"),
+    updated_before: Optional[str] = Query(None, description="Filter tickets updated before this date (YYYY-MM-DD HH:MM:SS)"),
+    limit: int = Query(50, description="Maximum number of tickets to return", ge=1, le=1000),
+    offset: int = Query(0, description="Number of tickets to skip", ge=0),
+    sort_by: str = Query("created_at", description="Field to sort by", enum=["ticket_id", "created_at", "updated_at", "priority", "status"]),
+    sort_order: str = Query("desc", description="Sort order", enum=["asc", "desc"])
 ):
     data = load_it_data()
     tickets = data["support_tickets"]
     
     # Apply filters
-    if status:
-        tickets = [t for t in tickets if t["status"] == status.lower()]
-    if priority:
-        tickets = [t for t in tickets if t["priority"] == priority.lower()]
+    filtered_tickets = tickets
     
-    # Sort by creation date (newest first)
-    tickets.sort(key=lambda x: x["created_at"], reverse=True)
+    if ticket_id:
+        filtered_tickets = [t for t in filtered_tickets if t["ticket_id"] == ticket_id]
+    
+    if status:
+        filtered_tickets = [t for t in filtered_tickets if t["status"] == status.lower()]
+    
+    if priority:
+        filtered_tickets = [t for t in filtered_tickets if t["priority"] == priority.lower()]
+    
+    if category:
+        filtered_tickets = [t for t in filtered_tickets if category.lower() in t.get("category", "").lower()]
+    
+    if assigned_to:
+        filtered_tickets = [t for t in filtered_tickets if t.get("assigned_to") and assigned_to.lower() in str(t["assigned_to"]).lower()]
+    
+    if contact_email:
+        filtered_tickets = [t for t in filtered_tickets if t.get("contact_email") and contact_email.lower() in t["contact_email"].lower()]
+    
+    # Date filtering
+    def parse_date(date_str, field_name):
+        try:
+            return datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"Invalid {field_name} format. Use YYYY-MM-DD HH:MM:SS")
+    
+    if created_after:
+        created_after_dt = parse_date(created_after, "created_after")
+        filtered_tickets = [t for t in filtered_tickets if datetime.strptime(t["created_at"], "%Y-%m-%d %H:%M:%S") >= created_after_dt]
+    
+    if created_before:
+        created_before_dt = parse_date(created_before, "created_before")
+        filtered_tickets = [t for t in filtered_tickets if datetime.strptime(t["created_at"], "%Y-%m-%d %H:%M:%S") <= created_before_dt]
+    
+    if updated_after:
+        updated_after_dt = parse_date(updated_after, "updated_after")
+        filtered_tickets = [t for t in filtered_tickets if datetime.strptime(t["updated_at"], "%Y-%m-%d %H:%M:%S") >= updated_after_dt]
+    
+    if updated_before:
+        updated_before_dt = parse_date(updated_before, "updated_before")
+        filtered_tickets = [t for t in filtered_tickets if datetime.strptime(t["updated_at"], "%Y-%m-%d %H:%M:%S") <= updated_before_dt]
+    
+    # Sorting
+    reverse_order = sort_order.lower() == "desc"
+    
+    if sort_by == "priority":
+        priority_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        filtered_tickets.sort(key=lambda x: priority_order.get(x["priority"], 4), reverse=reverse_order)
+    elif sort_by == "status":
+        status_order = {"open": 0, "in_progress": 1, "resolved": 2, "closed": 3}
+        filtered_tickets.sort(key=lambda x: status_order.get(x["status"], 4), reverse=reverse_order)
+    else:
+        filtered_tickets.sort(key=lambda x: x[sort_by], reverse=reverse_order)
+    
+    # Pagination
+    total_count = len(filtered_tickets)
+    paginated_tickets = filtered_tickets[offset:offset + limit]
+    
+    # Calculate summary statistics
+    status_counts = {}
+    priority_counts = {}
+    category_counts = {}
+    
+    for ticket in filtered_tickets:
+        status_counts[ticket["status"]] = status_counts.get(ticket["status"], 0) + 1
+        priority_counts[ticket["priority"]] = priority_counts.get(ticket["priority"], 0) + 1
+        category_counts[ticket["category"]] = category_counts.get(ticket["category"], 0) + 1
     
     return {
-        "count": len(tickets),
-        "tickets": tickets
+        "total_count": total_count,
+        "returned_count": len(paginated_tickets),
+        "pagination": {
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total_count
+        },
+        "summary": {
+            "status_breakdown": status_counts,
+            "priority_breakdown": priority_counts,
+            "category_breakdown": category_counts
+        },
+        "tickets": paginated_tickets
     }
 
 @router.post("/auth/password/reset", dependencies=[Depends(verify_it_api_key)])
@@ -246,7 +359,7 @@ async def get_password_reset_history(
         "password_resets": resets
     }
 
-@router.get("/it/dashboard", dependencies=[Depends(verify_it_api_key)])
+@router.get("/dashboard", dependencies=[Depends(verify_it_api_key)])
 async def get_it_dashboard():
     """Comprehensive IT dashboard with all relevant metrics"""
     data = load_it_data()
